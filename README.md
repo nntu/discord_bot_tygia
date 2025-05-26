@@ -77,10 +77,22 @@ Khi bot khởi động, nó sẽ:
 
 ## Logging
 
-Bot sử dụng thư viện `log` và `env_logger` để ghi log. Các loại log bao gồm:
-- INFO: Thông tin về các hoạt động bình thường
-- WARN: Cảnh báo về các vấn đề không nghiêm trọng
-- ERROR: Lỗi nghiêm trọng cần được xử lý
+Bot sử dụng thư viện `log4rs` để ghi log. Logs được lưu trong thư mục `logs/` với các tính năng:
+
+1. Log hiển thị trên console và lưu vào file
+2. File log được tự động rotate khi đạt 10MB
+3. Giữ tối đa 5 file log cũ
+4. Format log: `[Thời gian] [Level] Nội dung`
+
+Cấu trúc thư mục logs:
+```
+logs/
+  ├── bot.log           # File log hiện tại
+  ├── bot_1.log         # File log cũ nhất
+  ├── bot_2.log         # File log cũ
+  ├── bot_3.log         # File log cũ
+  └── bot_4.log         # File log cũ
+```
 
 Các thông tin được log:
 - Thời điểm bot khởi động
@@ -113,4 +125,4 @@ Bot sẽ:
 - image: Xử lý ảnh
 - screenshots: Chụp màn hình
 - log: Thư viện logging
-- env_logger: Logger cho biến môi trường 
+- log4rs: Logger với cấu hình YAML 

@@ -1,16 +1,18 @@
-use poise::serenity_prelude::{AttachmentType, GatewayIntents, ChannelId};
+use poise::serenity_prelude as serenity;
 use chrono::Local;
 use dotenv::dotenv;
 use image::ImageBuffer;
 use screenshots::Screen;
-use std::{env, path::Path, error::Error};
-use log::{info, error, warn};
+use std::{env, path::Path, fs};
+use log::{info, error};
 
-type Context<'a> = poise::Context<'a, (), Box<dyn Error + Send + Sync>>;
+struct Data {} // User data, which is stored and accessible in all command invocations
+type Error = Box<dyn std::error::Error + Send + Sync>;
+type Context<'a> = poise::Context<'a, Data, Error>;
 
 /// Lệnh !tygia - chụp màn hình và gửi kèm thời gian
 #[poise::command(prefix_command, slash_command = false)]
-async fn tygia(ctx: Context<'_>) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn tygia(ctx: Context<'_>) -> Result<(), Error> {
     info!("Nhận lệnh !tygia từ user {}", ctx.author().name);
     
     // Chụp màn hình
@@ -55,13 +57,23 @@ async fn tygia(ctx: Context<'_>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     info!("Thời gian hiện tại: {}", now);
 
+    // Đọc file ảnh
+    let image_data = fs::read(path)?;
+    let filename = path.file_name()
+        .ok_or_else(|| {
+            error!("Không thể lấy tên file");
+            "Không thể lấy tên file"
+        })?
+        .to_string_lossy()
+        .to_string();
+
     // Gửi tin nhắn với ảnh
     info!("Đang gửi tin nhắn với ảnh...");
-    ctx.send(|m| {
-        m.content(format!("🕓 Tỷ giá lúc: `{}`", now))
-         .attachment(AttachmentType::Path(path))
-    })
-    .await?;
+    let reply = poise::CreateReply::default()
+        .content(format!("🕓 Tỷ giá lúc: `{}`", now))
+        .attachment(serenity::CreateAttachment::bytes(image_data, filename));
+    
+    ctx.send(reply).await?;
     info!("Đã gửi tin nhắn thành công");
 
     // Xóa file ảnh tạm
@@ -73,9 +85,12 @@ async fn tygia(ctx: Context<'_>) -> Result<(), Box<dyn Error + Send + Sync>> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn main() -> Result<(), Error> {
+    // Tạo thư mục logs nếu chưa tồn tại
+    fs::create_dir_all("logs")?;
+
     // Khởi tạo logger
-    env_logger::init();
+    log4rs::init_file("log4rs.yaml", Default::default())?;
     info!("Đang khởi động bot...");
 
     // Load biến môi trường từ file .env
@@ -92,26 +107,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "Không tìm thấy CHANNEL_ID trong file .env"
         })?;
 
-    // Cấu hình bot
-    info!("Đang cấu hình bot...");
-    let options: poise::FrameworkOptions<(), Box<dyn Error + Send + Sync>> = poise::FrameworkOptions {
-        commands: vec![tygia()],
-        prefix_options: poise::PrefixFrameworkOptions {
-            prefix: Some("!".into()),
-            ..Default::default()
-        },
-        ..Default::default()
-    };
+    let intents = serenity::GatewayIntents::non_privileged() | 
+                 serenity::GatewayIntents::MESSAGE_CONTENT;
 
-    // Khởi động bot
-    info!("Đang kết nối với Discord...");
-    poise::Framework::builder()
-        .options(options)
-        .token(token)
-        .intents(
-            GatewayIntents::non_privileged() | 
-            GatewayIntents::MESSAGE_CONTENT
-        )
+    let framework = poise::Framework::builder()
+        .options(poise::FrameworkOptions {
+            commands: vec![tygia()],
+            prefix_options: poise::PrefixFrameworkOptions {
+                prefix: Some("!".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
         .setup(move |ctx, _ready, _framework| {
             let channel_id = channel_id.clone();
             Box::pin(async move {
@@ -119,11 +126,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 
                 // Gửi tin nhắn thông báo khi bot khởi động
                 if let Ok(channel_id) = channel_id.parse::<u64>() {
-                    let channel = ChannelId(channel_id);
+                    let channel = serenity::ChannelId::new(channel_id);
                     info!("Đang gửi tin nhắn thông báo đến channel {}", channel_id);
-                    if let Err(e) = channel.send_message(&ctx.http, |m| {
-                        m.content("🤖 Bot đã sẵn sàng! Sử dụng lệnh `!tygia` để chụp màn hình.")
-                    }).await {
+                    
+                    let builder = serenity::CreateMessage::new()
+                        .content("🤖 Bot đã sẵn sàng! Sử dụng lệnh `!tygia` để chụp màn hình.");
+                    
+                    if let Err(e) = channel.send_message(&ctx.http, builder).await {
                         error!("Không thể gửi tin nhắn đến channel: {}", e);
                     } else {
                         info!("Đã gửi tin nhắn thông báo thành công");
@@ -132,11 +141,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                     error!("Channel ID không hợp lệ: {}", channel_id);
                 }
                 
-                Ok(())
+                Ok(Data {})
             })
         })
-        .run()
+        .build();
+
+    let mut client = serenity::ClientBuilder::new(token, intents)
+        .framework(framework)
         .await?;
+    
+    client.start().await?;
 
     Ok(())
 }

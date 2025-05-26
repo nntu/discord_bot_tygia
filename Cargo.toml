@@ -4,11 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-poise = "0.5.5"
+poise = "0.6.1"
 tokio = { version = "1.28.0", features = ["full"] }
 dotenv = "0.15.0"
 chrono = "0.4.26"
-image = "0.24.7"
+image = "0.25.6"
 screenshots = "0.8.5"
 log = "0.4.20"
-env_logger = "0.10.0"
+log4rs = "1.2.0"
+tracing = "0.1.40"
+futures-util = "0.3.13"
